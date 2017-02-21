@@ -12,7 +12,7 @@ def forest_minimize(func, dimensions, base_estimator="ET",
                     acq_func="EI", acq_optimizer="auto",
                     x0=None, y0=None, random_state=None, verbose=False,
                     callback=None, n_points=10000, xi=0.01, kappa=1.96,
-                    n_jobs=1):
+                    n_jobs=1, quantity='quantile'):
     """Sequential optimisation using decision trees.
 
     A tree based regression model is used to model the expensive to evaluate
@@ -168,4 +168,4 @@ def forest_minimize(func, dimensions, base_estimator="ET",
                          x0=x0, y0=y0, random_state=random_state,
                          acq_func=acq_func,
                          xi=xi, kappa=kappa, verbose=verbose,
-                         callback=callback, acq_optimizer="sampling")
+                         callback=callback, acq_optimizer="sampling", quantity=quantity)

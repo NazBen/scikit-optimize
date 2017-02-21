@@ -258,7 +258,7 @@ class Optimizer(object):
                 est.fit(self.space.transform(self.Xi), self.yi)
 
             if hasattr(self, "next_xs_") and self.acq_func == "gp_hedge":
-                self.gains_ -= est.predict(np.vstack(self.next_xs_))
+                self.gains_ -= est.predict_quantile(np.vstack(self.next_xs_), 0.01)
             self.models.append(est)
 
             X = self.space.transform(self.space.rvs(
