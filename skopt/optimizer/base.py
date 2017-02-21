@@ -31,7 +31,7 @@ def base_minimize(func, dimensions, base_estimator,
                   acq_func="EI", acq_optimizer="lbfgs",
                   x0=None, y0=None, random_state=None, verbose=False,
                   callback=None, n_points=10000, n_restarts_optimizer=5,
-                  xi=0.01, kappa=1.96, n_jobs=1, quantity='quantile'):
+                  xi=0.01, kappa=1.96, n_jobs=1):
     """
     Parameters
     ----------
