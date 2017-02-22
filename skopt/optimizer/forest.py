@@ -5,6 +5,7 @@ from sklearn.utils import check_random_state
 from .base import base_minimize
 from ..learning import ExtraTreesRegressor
 from ..learning import RandomForestRegressor
+from ..learning import RandomForestQuantileRegressor
 
 
 def forest_minimize(func, dimensions, base_estimator="ET",
@@ -12,7 +13,7 @@ def forest_minimize(func, dimensions, base_estimator="ET",
                     acq_func="EI", acq_optimizer="auto",
                     x0=None, y0=None, random_state=None, verbose=False,
                     callback=None, n_points=10000, xi=0.01, kappa=1.96,
-                    n_jobs=1):
+                    n_jobs=1, quantiles=0.05):
     """Sequential optimisation using decision trees.
 
     A tree based regression model is used to model the expensive to evaluate
@@ -145,7 +146,7 @@ def forest_minimize(func, dimensions, base_estimator="ET",
 
     # Default estimator
     if isinstance(base_estimator, str):
-        if base_estimator not in ("RF", "ET"):
+        if base_estimator not in ("RF", "ET", "RFquantile"):
             raise ValueError(
                 "Valid strings for the base_estimator parameter"
                 " are: 'RF' or 'ET', not '%s'" % base_estimator)
@@ -161,13 +162,12 @@ def forest_minimize(func, dimensions, base_estimator="ET",
                                                  min_samples_leaf=3,
                                                  n_jobs=n_jobs,
                                                  random_state=rng)
-        elif base_estimator == 'RFquantile':
-            base_estimator = RandomForestRegressor(n_estimators=100,
-                                                   min_samples_leaf=3,
-                                                   n_jobs=n_jobs,
-                                                   random_state=rng)
-
-            
+        elif base_estimator == "RFquantile":
+            base_estimator = RandomForestQuantileRegressor(quantiles=quantiles,
+                                                           n_estimators=100,
+                                                           min_samples_leaf=3,
+                                                           n_jobs=n_jobs,
+                                                           random_state=rng)
 
     return base_minimize(func, dimensions, base_estimator,
                          n_calls=n_calls, n_points=n_points,
