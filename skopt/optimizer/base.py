@@ -13,17 +13,8 @@ import numpy as np
 
 from ..callbacks import check_callback
 from ..callbacks import VerboseCallback
-from ..utils import create_result
 from .optimizer import Optimizer
-
-
-def _eval_callbacks(callbacks, optimizer, specs):
-    if callbacks:
-        result = create_result(optimizer.Xi, optimizer.yi,
-                               optimizer.space, optimizer.rng,
-                               specs, optimizer.models)
-        for c in callbacks:
-            c(result)
+from ..utils import eval_callbacks
 
 
 def base_minimize(func, dimensions, base_estimator,
@@ -60,7 +51,7 @@ def base_minimize(func, dimensions, base_estimator,
         which returns `std(Y | x)`` along with `E[Y | x]`.
 
     * `n_calls` [int, default=100]:
-        Number of calls to `func`.
+        Maximum number of calls to `func`.
 
     * `n_random_starts` [int, default=10]:
         Number of evaluations of `func` with random initialization points
@@ -117,9 +108,10 @@ def base_minimize(func, dimensions, base_estimator,
         If callable then `callback(res)` is called after each call to `func`.
         If list of callables, then each callable in the list is called.
 
-    * `n_points` [int, default=500]:
-        Number of points to sample to determine the next "best" point.
-        Useless if acq_optimizer is set to `"lbfgs"`.
+    * `n_points` [int, default=10000]:
+        If `acq_optimizer` is set to `"sampling"`, then `acq_func` is
+        optimized by computing `acq_func` at `n_points` randomly sampled
+        points.
 
     * `n_restarts_optimizer` [int, default=5]:
         The number of restarts of the optimizer when `acq_optimizer`
@@ -178,8 +170,15 @@ def base_minimize(func, dimensions, base_estimator,
     # Initialize with provided points (x0 and y0) and/or random points
     if x0 is None:
         x0 = []
-    elif not isinstance(x0[0], list):
+    elif not isinstance(x0[0], (list, tuple)):
         x0 = [x0]
+
+    if optimizer.space.n_dims == 1:
+        assert all(isinstance(p, Iterable) for p in x0)
+
+    if not all(len(p) == optimizer.space.n_dims for p in x0):
+        raise RuntimeError("Optimization space (%s) and initial points in x0 "
+                           "use inconsistent dimensions." % optimizer.space)
 
     if not isinstance(x0, list):
         raise ValueError("`x0` should be a list, but got %s" % type(x0))
@@ -206,6 +205,9 @@ def base_minimize(func, dimensions, base_estimator,
     if x0 and y0 is None:
         y0 = map(func, x0)
 
+    # setting the scope for these variables
+    result = None
+
     # User is god and knows the value of the objective at these points
     if x0 and y0 is not None:
         if not (isinstance(y0, Iterable) or isinstance(y0, numbers.Number)):
@@ -224,24 +226,27 @@ def base_minimize(func, dimensions, base_estimator,
             raise ValueError(
                 "`y0` elements should be scalars")
 
-        optimizer.tell(x0, y0)
+        result = optimizer.tell(x0, y0)
+        result.specs = specs
 
-        _eval_callbacks(callbacks, optimizer, specs)
+        if eval_callbacks(callbacks, result):
+            return result
 
     # Bayesian optimization loop
     n_iterations = n_calls - n_init_func_calls
     for n in range(n_iterations):
         next_x = optimizer.ask()
+
         # no need to fit a model on the last iteration
         fit_model = n < n_iterations - 1
         next_y = func(next_x)
         if not np.isscalar(next_y):
             raise ValueError("`func` should return a scalar")
 
-        optimizer.tell(next_x, next_y, fit=fit_model)
+        result = optimizer.tell(next_x, next_y, fit=fit_model)
+        result.specs = specs
 
-        _eval_callbacks(callbacks, optimizer, specs)
+        if eval_callbacks(callbacks, result):
+            break
 
-    # Pack results
-    return create_result(optimizer.Xi, optimizer.yi, optimizer.space,
-                         optimizer.rng, specs, optimizer.models)
+    return result

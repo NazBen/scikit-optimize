@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.utils.testing import assert_array_almost_equal
 from sklearn.utils.testing import assert_array_equal
 from sklearn.utils.testing import assert_equal
+from sklearn.utils.testing import assert_false
 from sklearn.utils.testing import assert_not_equal
 from sklearn.utils.testing import assert_less_equal
 from sklearn.utils.testing import assert_greater_equal
@@ -32,6 +33,12 @@ def check_categorical(vals, random_val):
     assert_equal(x.rvs(random_state=1), random_val)
 
 
+def check_limits(value, low, high):
+    # check if low <= value <= high
+    assert_less_equal(low, value)
+    assert_greater_equal(high, value)
+
+
 def test_dimensions():
     yield (check_dimension, Real, (1., 4.), 2.251066014107722)
     yield (check_dimension, Real, (1, 4), 2.251066014107722)
@@ -41,15 +48,13 @@ def test_dimensions():
     yield (check_categorical, (1., 2., 3., 4.), 2.)
 
 
-def check_limits(value, lower_bound, upper_bound):
-    assert_less_equal(lower_bound, value)
-    assert_greater_equal(upper_bound, value)
-
-
 def test_real():
     a = Real(1, 25)
     for i in range(50):
-        yield (check_limits, a.rvs(random_state=i), 1, 25)
+        r = a.rvs(random_state=i)
+        check_limits(r, 1, 25)
+        assert_true(r in a)
+
     random_values = a.rvs(random_state=0, n_samples=10)
     assert_array_equal(random_values.shape, (10))
     assert_array_equal(a.transform(random_values), random_values)
@@ -68,10 +73,25 @@ def test_real():
         log_uniform.inverse_transform(transformed_vals), random_values)
 
 
+def test_real_bounds():
+    # should give same answer as using check_limits() but this is easier
+    # to read
+    a = Real(1., 2.1)
+    assert_false(0.99 in a)
+    assert_true(1. in a)
+    assert_true(2.09 in a)
+    assert_true(2.1 in a)
+    assert_false(np.nextafter(2.1, 3.) in a)
+
+
 def test_integer():
     a = Integer(1, 10)
     for i in range(50):
-        yield (check_limits, a.rvs(random_state=i), 1, 11)
+        r = a.rvs(random_state=i)
+        assert_less_equal(1, r)
+        assert_greater_equal(11, r)
+        assert_true(r in a)
+
     random_values = a.rvs(random_state=0, n_samples=10)
     assert_array_equal(random_values.shape, (10))
     assert_array_equal(a.transform(random_values), random_values)
@@ -306,3 +326,39 @@ def test_categorical_identity():
     transformed = cat.transform(samples)
     assert_array_equal(transformed, samples)
     assert_array_equal(samples, cat.inverse_transform(transformed))
+
+
+def test_categorical_distance():
+    categories = ['car', 'dog', 'orange']
+    cat = Categorical(categories)
+    for cat1 in categories:
+        for cat2 in categories:
+            delta = cat.distance(cat1, cat2)
+            if cat1 == cat2:
+                assert delta == 0
+            else:
+                assert delta == 1
+
+
+def test_integer_distance():
+    ints = Integer(1, 10)
+    for i in range(1, 10+1):
+        assert_equal(ints.distance(4, i), abs(4 - i))
+
+
+def test_integer_distance_out_of_range():
+    ints = Integer(1, 10)
+    assert_raises_regex(RuntimeError, "compute distance for values within",
+                        ints.distance, 11, 10)
+
+
+def test_real_distance_out_of_range():
+    ints = Real(1, 10)
+    assert_raises_regex(RuntimeError, "compute distance for values within",
+                        ints.distance, 11, 10)
+
+
+def test_real_distance():
+    reals = Real(1, 10)
+    for i in range(1, 10+1):
+        assert_equal(reals.distance(4.1234, i), abs(4.1234 - i))

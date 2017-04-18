@@ -129,6 +129,13 @@ class Dimension(object):
         raise NotImplementedError
 
 
+def _uniform_inclusive(loc=0.0, scale=1.0):
+    # like scipy.stats.distributions but inclusive of `high`
+    # XXX scale + 1. might not actually be a float after scale if
+    # XXX scale is very large.
+    return uniform(loc=loc, scale=np.nextafter(scale, scale + 1.))
+
+
 class Real(Dimension):
     def __init__(self, low, high, prior="uniform", transform=None):
         """Search space dimension that can take on any real value.
@@ -139,7 +146,7 @@ class Real(Dimension):
             Lower bound (inclusive).
 
         * `high` [float]:
-            Upper bound (exclusive).
+            Upper bound (inclusive).
 
         * `prior` ["uniform" or "log-uniform", default="uniform"]:
             Distribution to use when sampling random points for this dimension.
@@ -175,7 +182,9 @@ class Real(Dimension):
         # The rvs on Dimension calls inverse_transform on the points sampled
         # using _rvs
         if self.transform_ == "normalize":
-            self._rvs = uniform(0, 1)
+            # set upper bound to next float after 1. to make the numbers
+            # inclusive of upper edge
+            self._rvs = _uniform_inclusive(0., 1.)
             if self.prior == "uniform":
                 self.transformer = Pipeline(
                     [Identity(), Normalize(low, high)])
@@ -185,10 +194,10 @@ class Real(Dimension):
                 )
         else:
             if self.prior == "uniform":
-                self._rvs = uniform(self.low, self.high - self.low)
+                self._rvs = _uniform_inclusive(self.low, self.high - self.low)
                 self.transformer = Identity()
             else:
-                self._rvs = uniform(
+                self._rvs = _uniform_inclusive(
                     np.log10(self.low),
                     np.log10(self.high) - np.log10(self.low))
                 self.transformer = Log10()
@@ -214,6 +223,9 @@ class Real(Dimension):
     def bounds(self):
         return (self.low, self.high)
 
+    def __contains__(self, point):
+        return self.low <= point <= self.high
+
     @property
     def transformed_bounds(self):
         if self.transform_ == "normalize":
@@ -224,6 +236,22 @@ class Real(Dimension):
             else:
                 return np.log10(self.low), np.log10(self.high)
 
+    def distance(self, a, b):
+        """Compute distance between point `a` and `b`.
+
+        Parameters
+        ----------
+        * `a` [float]
+            First point.
+
+        * `b` [float]
+            Second point.
+        """
+        if not (a in self and b in self):
+            raise RuntimeError("Can only compute distance for values within "
+                               "the space, not %s and %s." % (a, b))
+        return np.abs(a - b)
+
 
 class Integer(Dimension):
     def __init__(self, low, high, transform=None):
@@ -231,10 +259,10 @@ class Integer(Dimension):
 
         Parameters
         ----------
-        * `low` [float]:
+        * `low` [int]:
             Lower bound (inclusive).
 
-        * `high` [float]:
+        * `high` [int]:
             Upper bound (inclusive).
 
         * `transform` ["identity", "normalize", optional]:
@@ -284,12 +312,31 @@ class Integer(Dimension):
     def bounds(self):
         return (self.low, self.high)
 
+    def __contains__(self, point):
+        return self.low <= point <= self.high
+
     @property
     def transformed_bounds(self):
         if self.transform_ == "normalize":
             return 0, 1
         else:
             return (self.low, self.high)
+
+    def distance(self, a, b):
+        """Compute distance between point `a` and `b`.
+
+        Parameters
+        ----------
+        * `a` [int]
+            First point.
+
+        * `b` [int]
+            Second point.
+        """
+        if not (a in self and b in self):
+            raise RuntimeError("Can only compute distance for values within "
+                               "the space, not %s and %s." % (a, b))
+        return np.abs(a - b)
 
 
 class Categorical(Dimension):
@@ -376,12 +423,34 @@ class Categorical(Dimension):
     def bounds(self):
         return self.categories
 
+    def __contains__(self, point):
+        return point in self.categories
+
     @property
     def transformed_bounds(self):
         if self.transformed_size == 1:
             return (0.0, 1.0)
         else:
             return [(0.0, 1.0) for i in range(self.transformed_size)]
+
+    def distance(self, a, b):
+        """Compute distance between category `a` and `b`.
+
+        As categories have no order the distance between two points is one
+        if a != b and zero otherwise.
+
+        Parameters
+        ----------
+        * `a` [category]
+            First category.
+
+        * `b` [category]
+            Second category.
+        """
+        if not (a in self and b in self):
+            raise RuntimeError("Can only compute distance for values within "
+                               "the space, not %s and %s." % (a, b))
+        return 1 if a != b else 0
 
 
 class Space:
@@ -569,6 +638,13 @@ class Space:
 
         return b
 
+    def __contains__(self, point):
+        """Check that `point` is within the bounds of the space."""
+        for component, dim in zip(point, self.dimensions):
+            if component not in dim:
+                return False
+        return True
+
     @property
     def transformed_bounds(self):
         """The dimension bounds, in the warped space."""
@@ -585,3 +661,20 @@ class Space:
     @property
     def is_categorical(self):
         return all([isinstance(dim, Categorical) for dim in self.dimensions])
+
+    def distance(self, point_a, point_b):
+        """Compute distance between two points in this space.
+
+        Parameters
+        ----------
+        * `a` [array]
+            First point.
+
+        * `b` [array]
+            Second point.
+        """
+        distance = 0.
+        for a, b, dim in zip(point_a, point_b, self.dimensions):
+            distance += dim.distance(a, b)
+
+        return distance
